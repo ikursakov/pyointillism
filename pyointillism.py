@@ -278,10 +278,11 @@ def run(cores,so=None):
         scores.extend(newScores)
 
         #Find the winner
-        winners = sorted(children,key=lambda x: scores[children.index(x)])
-        parent = winners[0]
+        chart = sorted(zip(children,scores),key=lambda x: x[1])
+        num1,score = chart[0]
+        num2 = chart[random.randint(1,4)][0]
         
-#        parent = getChild(*winners)
+        parent = getChild(num1,num2)
 
         #Store a backup to resume running if the program is interrupted
         if generation % 100 == 0:
@@ -313,9 +314,13 @@ def crossover(g1,g2,mask):
     res.pos.x = mask[0]*g1.pos.x + int(not mask[0])*g2.pos.x
     res.pos.y = mask[0]*g1.pos.y + int(not mask[0])*g2.pos.y
     res.diameter = mask[1]*g1.diameter + int(not mask[1])*g2.diameter
+
+#    res.pos.x = mask[0]*g1.pos.x
+#    res.pos.y = mask[0]*g1.pos.y
+#    res.diameter = mask[1]*g1.diameter
     res.color = Color(mask[2]*g1.color.r + int(not mask[2])*g2.color.r,
                       mask[3]*g1.color.g + int(not mask[3])*g2.color.g,
-                      mask[3]*g1.color.b + int(not mask[3])*g2.color.b)
+                      mask[4]*g1.color.b + int(not mask[4])*g2.color.b)
     return res
 
 def getChild(o1,o2):
@@ -323,6 +328,7 @@ def getChild(o1,o2):
     genes_num = min(len(o1.genes),len(o2.genes))
     child = Organism(o1.size,genes_num)
     for c_g,o1_g,o2_g in zip(child.genes,o1.genes,o2.genes):
+        
         res= crossover(o1_g,o2_g,mask)
         c_g.copy(res)
     return child        
