@@ -13,7 +13,7 @@ import os
 import sys
 import random
 from copy import deepcopy
-from multiprocessing import Pool
+import multiprocessing
 import jsonpickle
 
 import numpy
@@ -109,6 +109,12 @@ class Gene:
             b = min(max(0,random.randint(int(self.color.b*(1-mutation_size)),int(self.color.b*(1+mutation_size)))),255)
             self.color = Color(r,g,b)
 
+    def copy(self,anotherGene):
+        self.size = anotherGene.size
+        self.diameter = anotherGene.diameter
+        self.pos = Point(anotherGene.pos.x,anotherGene.pos.y)
+        self.color = Color(anotherGene.color.r,anotherGene.color.g,anotherGene.color.b)
+
     def getSave(self):
         """
         Allows us to save an individual gene in case the program is stopped.
@@ -138,12 +144,12 @@ class Organism:
     This organism contains a bunch of genes that draw circles, working together to draw a picture.
     """
     def __init__(self,size,num):
-        self.genes = []
+        
         self.size = size
 
         #Create random genes up to the number given
-        for _ in xrange(num):
-            self.genes.append(Gene(size))
+        self.genes = [Gene(size) for _ in xrange (num)]        
+
 
     def mutate(self):
         #For small numbers of genes, each one has a random chance of mutating
@@ -180,11 +186,8 @@ class Organism:
         """
         Allows us to save an individual organism in case the program is stopped.
         """
-        so = []
-        so.append(generation)
-        for g in self.genes:
-            so.append(g.getSave())
-        return so
+        so = [generation]
+        return so + [g.getSave() for g in self.genes]
 
     def loadSave(self,so):
         """
@@ -228,8 +231,7 @@ def run(cores,so=None):
 
     target = globalTarget
 
-    #Setup the multiprocessing pool
-    p = Pool(cores)
+    
 
     #Create the parent organism (with random genes)
     generation = 1
@@ -241,9 +243,13 @@ def run(cores,so=None):
         generation = int(gen)
     prevScore = 101
     score = fitness(parent.drawImage(),target)
-
+    
+    #Setup the multiprocessing pool
+#    p = multiprocessing.Pool(cores):
+        
     #Infinite loop (until the process is interrupted)
     while True:
+        p = multiprocessing.Pool(cores)
         #Print the current score and write it to the log file
         print "Generation {} - {}".format(generation,score)
         f.write("Generation {} - {}\n".format(generation,score))
@@ -265,14 +271,17 @@ def run(cores,so=None):
 
         #Perform the mutations and add to the parent
         results = groupMutate(parent,POP_PER_GENERATION-1,p)
+        p.close()
         newScores,newChildren = zip(*results)
 
         children.extend(newChildren)
         scores.extend(newScores)
 
         #Find the winner
-        score = min(scores)
-        parent = children[scores.index(score)]
+        winners = sorted(children,key=lambda x: scores[children.index(x)])
+        parent = winners[0]
+        
+#        parent = getChild(*winners)
 
         #Store a backup to resume running if the program is interrupted
         if generation % 100 == 0:
@@ -295,11 +304,28 @@ def groupMutate(o,number,p):
     """
     Mutates and tests a number of organisms using the multiprocessing module.
     """
-    print o
-#    results = p.map(mutateAndTest,[o]*int(number))
-    results = [mutateAndTest(i) for i in [o]*int(number)]
+    results = p.map(mutateAndTest,[o]*int(number))
+#    results = [mutateAndTest(i) for i in [o]*int(number)]
     return results
-        
+
+def crossover(g1,g2,mask):
+    res = Gene(g1.size)
+    res.pos.x = mask[0]*g1.pos.x + int(not mask[0])*g2.pos.x
+    res.pos.y = mask[0]*g1.pos.y + int(not mask[0])*g2.pos.y
+    res.diameter = mask[1]*g1.diameter + int(not mask[1])*g2.diameter
+    res.color = Color(mask[2]*g1.color.r + int(not mask[2])*g2.color.r,
+                      mask[3]*g1.color.g + int(not mask[3])*g2.color.g,
+                      mask[3]*g1.color.b + int(not mask[3])*g2.color.b)
+    return res
+
+def getChild(o1,o2):
+    mask = [random.randint(0,1) for i in range(5)]
+    genes_num = min(len(o1.genes),len(o2.genes))
+    child = Organism(o1.size,genes_num)
+    for c_g,o1_g,o2_g in zip(child.genes,o1.genes,o2.genes):
+        res= crossover(o1_g,o2_g,mask)
+        c_g.copy(res)
+    return child        
 #-------------------------------------------------------------------------------------------------
 #Main Function
 #-------------------------------------------------------------------------------------------------
@@ -310,7 +336,7 @@ if __name__ == "__main__":
 
         #Set defaults
 
-        cores = max(1,cpu_count()-1)
+        cores = max(1,multiprocessing.cpu_count()-1)
         so = None
         for i,a in enumerate(args):
             if a == "-t":
