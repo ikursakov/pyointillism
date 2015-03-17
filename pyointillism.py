@@ -245,11 +245,11 @@ def run(cores,so=None):
     score = fitness(parent.drawImage(),target)
     
     #Setup the multiprocessing pool
-#    p = multiprocessing.Pool(cores):
+    p = multiprocessing.Pool(cores)
         
     #Infinite loop (until the process is interrupted)
     while True:
-        p = multiprocessing.Pool(cores)
+#        p = multiprocessing.Pool(cores)
         #Print the current score and write it to the log file
         print "Generation {} - {}".format(generation,score)
         f.write("Generation {} - {}\n".format(generation,score))
@@ -270,19 +270,33 @@ def run(cores,so=None):
         scores.append(score)
 
         #Perform the mutations and add to the parent
-        results = groupMutate(parent,POP_PER_GENERATION-1,p)
-        p.close()
+        try:
+            results = groupMutate(parent,POP_PER_GENERATION-1,p)
+        except KeyboardInterrupt:
+            print 'Bye!'
+            p.close()
+            return
+        
         newScores,newChildren = zip(*results)
 
         children.extend(newChildren)
         scores.extend(newScores)
-
+        
+        pairs = zip(children[:POP_PER_GENERATION],children[-1:0:-1])
+        try:
+            mult_results = p.map(multiplyAndTest,pairs)
+        except KeyboardInterrupt:
+            print 'Bye-bye!'
+            return
+        scores,children=zip(*mult_results)
         #Find the winner
         chart = sorted(zip(children,scores),key=lambda x: x[1])
-        num1,score = chart[0]
-        num2 = chart[random.randint(1,4)][0]
-        
-        parent = getChild(num1,num2)
+#        num1,score = chart[0]
+#        num2 = chart[1][0]
+#        num2 = chart[random.randint(1,20)][0]
+        parent,score = chart[0]
+#        parent = getChild(num1,num2)
+#        parent = getChildFromTwo(num1,num2)
 
         #Store a backup to resume running if the program is interrupted
         if generation % 100 == 0:
@@ -295,11 +309,14 @@ def mutateAndTest(o):
     Given an organism, perform a random mutation on it, and then use the fitness function to
     determine how accurate of a result the mutated offspring draws.
     """
-    c = deepcopy(o)
-    c.mutate()
-    i1 = c.drawImage()
-    i2 = globalTarget
-    return (fitness(i1,i2),c)
+    try:
+        c = deepcopy(o)
+        c.mutate()
+        i1 = c.drawImage()
+        i2 = globalTarget
+        return (fitness(i1,i2),c)
+    except KeyboardInterrupt, e:
+        pass
 
 def groupMutate(o,number,p):
     """
@@ -322,7 +339,12 @@ def crossover(g1,g2,mask):
                       mask[3]*g1.color.g + int(not mask[3])*g2.color.g,
                       mask[4]*g1.color.b + int(not mask[4])*g2.color.b)
     return res
-
+def multiplyAndTest(pair):
+    c = getChild(*pair)
+    i1 = c.drawImage()
+    i2 = globalTarget
+    return (fitness(i1,i2),c)
+    
 def getChild(o1,o2):
     mask = [random.randint(0,1) for i in range(5)]
     genes_num = min(len(o1.genes),len(o2.genes))
@@ -331,19 +353,30 @@ def getChild(o1,o2):
         
         res= crossover(o1_g,o2_g,mask)
         c_g.copy(res)
-    return child        
+    return child
+
+def getChildFromTwo(o1,o2):
+    genes_num = max(len(o1.genes),len(o2.genes))
+    len_o1_part = random.randint(0,len(o1.genes))
+    o1_part = random.sample(o1.genes,len_o1_part)
+    o2_part = random.sample(o2.genes,genes_num-len_o1_part)
+    child = Organism(o1.size,genes_num)
+    for c_g,g in zip(child.genes,o1_part+o2_part):
+        c_g.copy(g)
+    return child    
 #-------------------------------------------------------------------------------------------------
 #Main Function
 #-------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     #Check the arguments, options are currents -t (number of threads) and -s (save file)
+    cores = max(1,multiprocessing.cpu_count()-1)
+    so = None
     if len(sys.argv) > 1:
         args = sys.argv[1:]
 
         #Set defaults
 
-        cores = max(1,multiprocessing.cpu_count()-1)
-        so = None
+
         for i,a in enumerate(args):
             if a == "-t":
                 cores = int(args[i+1])
@@ -351,4 +384,4 @@ if __name__ == "__main__":
                 with open(args[i+1],'r') as save:
                     so = save.read()
 
-        run(cores,so)
+    run(cores,so)
